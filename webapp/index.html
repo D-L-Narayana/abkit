@@ -2,13 +2,35 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>abkit — experimentation platform</title>
-    <meta name="description" content="A/B-test dashboard, experiment wizard, sample-size planning, sequential results with confidence intervals, SRM guardrails, CUPED variance reduction and a ranking-metrics playground." />
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234338ca'/%3E%3Cpath d='M8 22l5-12 5 12M10.5 17h5' stroke='%23fff' stroke-width='2.2' fill='none' stroke-linecap='round'/%3E%3Cpath d='M20 10h3.5a3 3 0 010 6H20zM20 16h4a3 3 0 010 6h-4z' stroke='%23fff' stroke-width='2.2' fill='none' stroke-linejoin='round'/%3E%3C/svg%3E" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <meta name="description" content="A/B-test dashboard, experiment wizard, sample-size planning, sequential results with confidence intervals, SRM guardrails, CUPED variance reduction and a ranking-metrics playground. Runs entirely in your browser." />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f7f7f9" />
+    <meta property="og:title" content="abkit — experimentation platform" />
+    <meta property="og:description" content="Plan, run and read A/B tests with power analysis, SRM guardrails and CUPED — in the browser." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://abkit.vercel.app/" />
+    <meta property="og:image" content="https://abkit.vercel.app/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=JetBrains+Mono:wght@400..600&display=swap" rel="stylesheet" />
-    <script>try{var t=localStorage.getItem("abkit-theme");document.documentElement.dataset.theme=(t==="dark"||(!t&&matchMedia("(prefers-color-scheme: dark)").matches))?"dark":"light"}catch(e){}</script>
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("abkit-theme");
+          var dark = t === "dark" || (!t && matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.dataset.theme = dark ? "dark" : "light";
+          var m = document.querySelector('meta[name="theme-color"]');
+          if (m) m.content = dark ? "#17171c" : "#f7f7f9";
+        } catch (e) {}
+      })();
+    </script>
   </head>
-  <body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>

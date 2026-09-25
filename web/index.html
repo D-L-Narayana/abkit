@@ -6,29 +6,39 @@
 <title>abkit — A/B-test calculator & experimentation toolkit</title>
 <meta name="description" content="Two-proportion z-test, sample-size planner and sample-ratio-mismatch check, plus Monte-Carlo validation results from the abkit Python toolkit." />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23134e4a'/%3E%3Ctext x='16' y='22' font-size='16' font-family='sans-serif' font-weight='700' fill='%23fff' text-anchor='middle'%3EAB%3C/text%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=JetBrains+Mono:wght@400..600&display=swap" rel="stylesheet" />
+<meta name="color-scheme" content="light dark" />
 <style>
-:root{--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--bg:#f8fafc;--card:#fff;--brand:#134e4a;--ok:#15803d;--bad:#b91c1c;--warn:#b45309;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--bg)}
-*{box-sizing:border-box}body{margin:0;line-height:1.45}
+:root{color-scheme:light dark;--ink:oklch(21% .02 270);--muted:oklch(45% .02 270);--line:oklch(30% .02 270/.14);--bg:oklch(97.8% .004 260);--bg-2:oklch(95% .006 260);--card:#fff;--brand:oklch(48% .2 275);--brand-ink:#fff;--ok:oklch(50% .14 150);--bad:oklch(54% .19 22);--warn:oklch(58% .14 70);--ring:oklch(48% .2 275/.35);font-family:"Geist","Inter",system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);background:var(--bg)}
+@media (prefers-color-scheme:dark){:root{--ink:oklch(94% .006 270);--muted:oklch(74% .01 270);--line:oklch(100% 0 0/.12);--bg:oklch(15% .012 270);--bg-2:oklch(19% .014 270);--card:oklch(20.5% .015 270);--brand:oklch(79% .12 275);--brand-ink:oklch(15% .012 270);--ok:oklch(76% .14 150);--bad:oklch(74% .16 22);--warn:oklch(80% .13 75);--ring:oklch(72% .15 275/.5)}}
+*{box-sizing:border-box}body{margin:0;line-height:1.5;-webkit-font-smoothing:antialiased}
 .wrap{max-width:1040px;margin:0 auto;padding:0 20px}
-header{background:var(--card);border-bottom:1px solid var(--line)}header .wrap{display:flex;justify-content:space-between;align-items:center;height:56px}
-.brand{font-weight:800;color:var(--brand);text-decoration:none;font-size:20px}nav a{margin-left:16px;color:var(--muted);text-decoration:none;font-size:14px}
-h1{font-size:clamp(24px,3.2vw,34px);margin:26px 0 6px;letter-spacing:-.02em}.lead{color:var(--muted);margin:0 0 20px;max-width:820px}
+header{background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;backdrop-filter:blur(8px)}header .wrap{display:flex;justify-content:space-between;align-items:center;height:56px}
+.brand{font-weight:700;color:var(--ink);text-decoration:none;font-size:18px;letter-spacing:-.01em;display:inline-flex;align-items:center;gap:8px}.brand svg{color:var(--brand)}
+nav a{margin-left:16px;color:var(--muted);text-decoration:none;font-size:14px;font-weight:500}nav a:hover{color:var(--ink)}
+.notice{margin:20px 0 0;padding:10px 14px;border-radius:10px;background:var(--bg-2);border:1px solid var(--line);font-size:14px}.notice a{color:var(--brand);font-weight:600}
+h1{font-size:clamp(24px,3.2vw,34px);margin:22px 0 6px;letter-spacing:-.02em;text-wrap:balance}.lead{color:var(--muted);margin:0 0 20px;max-width:820px}.lead a{color:var(--brand)}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:24px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
-.card h2{margin:0 0 4px;font-size:17px}.card p.hint{margin:0 0 12px;color:var(--muted);font-size:13px}
-label{display:flex;flex-direction:column;gap:3px;font-size:13px;color:var(--muted);margin-bottom:8px}
-input{padding:7px 9px;border:1px solid var(--line);border-radius:8px;font:inherit;color:var(--ink)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px}
+.card h2{margin:0 0 4px;font-size:17px;letter-spacing:-.01em}.card p.hint{margin:0 0 12px;color:var(--muted);font-size:13px}
+label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+input{padding:9px 11px;border:1px solid var(--line);border-radius:9px;font:inherit;font-family:"JetBrains Mono",ui-monospace,monospace;font-size:14px;color:var(--ink);background:var(--card);font-variant-numeric:tabular-nums}
+input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--ring)}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.out{margin-top:10px;padding:10px 12px;border-radius:8px;background:#f1f5f9;font-size:14px;font-variant-numeric:tabular-nums}
+.out{margin-top:10px;padding:12px 14px;border-radius:10px;background:var(--bg-2);border:1px solid var(--line);font-size:14px;font-variant-numeric:tabular-nums;line-height:1.6}
 .out b{font-weight:700}.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
-table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}td.num{text-align:right;font-variant-numeric:tabular-nums}
-footer{color:var(--muted);font-size:13px;padding:24px 0 40px}
-code{background:#f1f5f9;padding:1px 5px;border-radius:5px;font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em}td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+footer{color:var(--muted);font-size:13px;padding:24px 0 40px}footer a{color:var(--brand)}
+code{background:var(--bg-2);border:1px solid var(--line);padding:1px 6px;border-radius:6px;font-size:13px;font-family:"JetBrains Mono",ui-monospace,monospace}
+@media (max-width:520px){.two{grid-template-columns:1fr}nav a{margin-left:10px}}
 </style>
 </head>
 <body>
-<header><div class="wrap"><a class="brand" href="./">abkit</a><nav><a href="https://github.com/D-L-Narayana/abkit">GitHub</a><a href="https://github.com/D-L-Narayana/abkit#methodology">Methodology</a><a href="https://pypi.org/" hidden>PyPI</a></nav></div></header>
+<header><div class="wrap"><a class="brand" href="./"><svg width="24" height="24" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="1.5" y="1.5" width="29" height="29" rx="8" stroke="currentColor" stroke-width="1.5"/><path d="M8 22l5-12 5 12M10.5 17h5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 10h3.5a3 3 0 010 6H20zM20 16h4a3 3 0 010 6h-4z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>abkit</a><nav><a href="https://abkit.vercel.app">Full app</a><a href="https://github.com/D-L-Narayana/abkit">GitHub</a><a href="https://github.com/D-L-Narayana/abkit#methodology-validated-by-simulation">Methodology</a></nav></div></header>
 <main class="wrap">
+  <p class="notice">This is the dependency-free static calculator. The full experimentation platform (dashboard, wizard, results, CUPED, ranking lab) lives at <a href="https://abkit.vercel.app">abkit.vercel.app</a>.</p>
   <h1>A/B-test calculator &amp; experimentation toolkit</h1>
   <p class="lead">The formulas below are the JavaScript twin of the Python package <a href="https://github.com/D-L-Narayana/abkit">abkit</a>: two-proportion z-test with confidence interval, sample-size planning, and the sample-ratio-mismatch guardrail. Underneath, the Monte-Carlo studies that check the statistics actually hold (A/A tests, power, peeking, CUPED, SRM, interleaving).</p>
 

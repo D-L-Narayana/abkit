@@ -52,7 +52,14 @@ client-side — uploaded data never leaves the browser.
 
 Six demo experiments are simulated deterministically (seeded PRNG) with known true effects: a real winner, a loser, a null with a
 deliberate 1.2-pt bucketing skew that trips the SRM guardrail, a novelty effect that fades, and a revenue metric with a correlated
-pre-period covariate for CUPED. Light/dark theme, responsive from 360 px, keyboard-accessible, reduced-motion aware.
+pre-period covariate for CUPED. Deleting is undoable, and the demo set can be restored at any time.
+
+**Design system.** One set of colour roles (`--bg/--card/--ink/--accent/…`) defined twice — light and dark — with separate shades for
+*filled* controls and *text/links*, so buttons keep AA contrast in both themes. The theme follows `prefers-color-scheme` live until you
+choose explicitly (persisted, synced across tabs, no flash on load); charts, tooltips and focus rings read the same variables. Every
+component class sits in `@layer components`, so Tailwind utilities always win. Keyboard-accessible (skip-link, focus-visible rings,
+labelled icon buttons, `aria-invalid` + inline errors on every numeric field), reduced-motion aware, responsive from 360 px — the
+dashboard table becomes cards on phones.
 
 ```bash
 cd webapp && npm ci && npm run dev      # http://localhost:5173
@@ -72,7 +79,7 @@ npm run build                           # typecheck + production bundle in webap
 | | `team_draft_interleave`, `interleaving_outcome` | team-draft interleaving (Radlinski, Kurup & Joachims, 2008) for online ranker comparison |
 | `abkit.simulate` | six Monte-Carlo studies | writes `reports/simulation.json` |
 | `abkit.cli` | `abkit ztest \| samplesize \| samplesize-mean \| srm \| simulate` | |
-| `web/index.html` | z-test, sample size, SRM in vanilla JS | Acklam inverse-normal, regularised incomplete gamma for χ² |
+| `web/index.html` | z-test, sample size, SRM in vanilla JS | Acklam inverse-normal, regularised incomplete gamma for χ²; follows the OS light/dark scheme |
 
 ## Install & use
 
@@ -121,12 +128,19 @@ edge cases, and interleaving fairness (every item exactly once, teams balanced, 
 ## Layout
 
 ```
-abkit/stats.py      tests, planning, guardrails, CUPED, corrections
-abkit/ranking.py    NDCG, MRR, P@k, team-draft interleaving
-abkit/simulate.py   Monte-Carlo studies -> reports/simulation.json
-abkit/cli.py        command-line interface
-tests/              pytest
-web/index.html      static calculator (deployed to Vercel)
+abkit/stats.py        tests, planning, guardrails, CUPED, corrections
+abkit/ranking.py      NDCG, MRR, P@k, team-draft interleaving
+abkit/simulate.py     Monte-Carlo studies -> reports/simulation.json
+abkit/cli.py          command-line interface
+tests/                pytest
+webapp/src/
+  stats.ts            TypeScript twin of the statistics (no dependencies)
+  model.ts            experiment model, simulation, storage, share links, CSV
+  lib/analysis.ts     cumulative analysis + verdicts shared by all pages
+  theme.ts            light/dark with system-follow + persistence
+  components/         layout, form fields, charts (theme-aware Recharts)
+  pages/              Dashboard, Wizard, Results, Calculator, RankingLab, Upload, Docs
+web/index.html        dependency-free static calculator (same formulas, one file)
 ```
 
 ## Roadmap

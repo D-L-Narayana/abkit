@@ -1,5 +1,5 @@
 /** Experiment model, deterministic simulation, storage and share links. */
-import { addSums, binomial, emptySums, randn, type Sums } from "./stats";
+import { addSums, binomial, emptySums, mulberry32, randn, type Sums } from "./stats";
 
 export type MetricType = "conversion" | "continuous";
 export interface DayData { day: number; nA: number; nB: number; convA: number; convB: number; sumsA: Sums; sumsB: Sums }
@@ -25,23 +25,13 @@ export interface Experiment {
   tags: string[];
 }
 
-export const rnd32 = (seed: number): (() => number) => {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-};
 export const hash = (s: string): number => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } return h >>> 0; };
 
 export interface SimOptions { trueLiftRel: number; days: number; srmSkew?: number; preCorrelation?: number; noveltyDecay?: boolean }
 
 /** Simulate daily aggregates for an experiment definition. */
 export function simulate(e: Omit<Experiment, "days">, o: SimOptions): DayData[] {
-  const rnd = rnd32(hash(e.id));
+  const rnd = mulberry32(hash(e.id));
   const out: DayData[] = [];
   const rho = o.preCorrelation ?? 0.6;
   for (let d = 0; d < o.days; d++) {
@@ -142,8 +132,11 @@ export function decodeShare(s: string): Experiment | null {
 
 /** CSV: columns variant (A/B or control/treatment), converted (0/1) or value, optional pre_value, optional day. */
 export function parseCsv(text: string, name: string): Experiment {
-  const lines = text.trim().split(/\r?\n/);
-  const header = lines[0]!.split(",").map((h) => h.trim().toLowerCase());
+  const lines = text.replace(/^\uFEFF/, "").trim().split(/\r?\n/);
+  if (lines.length < 2) throw new Error("The file needs a header row and at least one data row.");
+  const sep = (lines[0]!.match(/;/g)?.length ?? 0) > (lines[0]!.match(/,/g)?.length ?? 0) ? ";" : ",";
+  const split = (line: string) => line.split(sep).map((c) => c.trim().replace(/^"(.*)"$/, "$1"));
+  const header = split(lines[0]!).map((h) => h.toLowerCase());
   const col = (n: string) => header.indexOf(n);
   const iv = col("variant"), ic = col("converted"), ival = col("value"), ipre = col("pre_value"), iday = col("day");
   if (iv < 0 || (ic < 0 && ival < 0)) throw new Error("CSV needs a 'variant' column and either 'converted' (0/1) or 'value' (number). Optional: pre_value, day.");
@@ -151,7 +144,7 @@ export function parseCsv(text: string, name: string): Experiment {
   const byDay = new Map<number, DayData>();
   for (const line of lines.slice(1)) {
     if (!line.trim()) continue;
-    const cells = line.split(",");
+    const cells = split(line);
     const v = (cells[iv] ?? "").trim().toLowerCase();
     const isB = ["b", "treatment", "variant", "test", "1"].includes(v);
     const day = iday >= 0 ? Number(cells[iday]) || 1 : 1;
@@ -168,6 +161,7 @@ export function parseCsv(text: string, name: string): Experiment {
     byDay.set(day, d);
   }
   const days = [...byDay.values()].sort((a, b) => a.day - b.day);
+  if (days.reduce((s, d) => s + d.nA, 0) === 0 || days.reduce((s, d) => s + d.nB, 0) === 0) throw new Error("Both arms need rows: label treatment rows B/treatment/variant/test/1 and control rows A/control/0.");
   const total = days.reduce((s, d) => s + d.nA + d.nB, 0);
   const convTotal = days.reduce((s, d) => s + d.convA, 0);
   const nA = days.reduce((s, d) => s + d.nA, 0);
