@@ -1,0 +1,42 @@
+{
+  "seed": 2026,
+  "aa_false_positive_rate": {
+    "alpha": 0.05,
+    "fpr": 0.043
+  },
+  "power_at_mde": {
+    "n_per_arm": 14751,
+    "empirical_power": 0.79,
+    "target_power": 0.8
+  },
+  "peeking": {
+    "looks": 10,
+    "fpr_peeking": 0.21,
+    "fpr_bonferroni_per_look": 0.045,
+    "nominal_alpha": 0.05
+  },
+  "cuped": {
+    "rho_pre_period": 0.6,
+    "mean_variance_reduction": 0.36067314820701457,
+    "theory_variance_reduction": 0.36,
+    "power_raw": 0.75,
+    "power_cuped": 0.89,
+    "mean_bias_of_lift": 0.0006505256367204573
+  },
+  "srm": {
+    "users": 200000,
+    "skew": 0.01,
+    "false_alarm_rate": 0.0,
+    "detection_rate": 1.0,
+    "alpha": 0.001
+  },
+  "interleaving_vs_ab": {
+    "sims": 20,
+    "median_sessions_interleaving": 1787.5,
+    "median_sessions_ab": 887.5,
+    "p95_sessions_interleaving": 3000.0,
+    "p95_sessions_ab": 3000.0,
+    "capped_at": 3000
+  },
+  "elapsed_sec": 5.9
+}

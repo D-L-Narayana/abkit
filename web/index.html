@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>abkit — A/B-test calculator & experimentation toolkit</title>
+<meta name="description" content="Two-proportion z-test, sample-size planner and sample-ratio-mismatch check, plus Monte-Carlo validation results from the abkit Python toolkit." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23134e4a'/%3E%3Ctext x='16' y='22' font-size='16' font-family='sans-serif' font-weight='700' fill='%23fff' text-anchor='middle'%3EAB%3C/text%3E%3C/svg%3E" />
+<style>
+:root{--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--bg:#f8fafc;--card:#fff;--brand:#134e4a;--ok:#15803d;--bad:#b91c1c;--warn:#b45309;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--bg)}
+*{box-sizing:border-box}body{margin:0;line-height:1.45}
+.wrap{max-width:1040px;margin:0 auto;padding:0 20px}
+header{background:var(--card);border-bottom:1px solid var(--line)}header .wrap{display:flex;justify-content:space-between;align-items:center;height:56px}
+.brand{font-weight:800;color:var(--brand);text-decoration:none;font-size:20px}nav a{margin-left:16px;color:var(--muted);text-decoration:none;font-size:14px}
+h1{font-size:clamp(24px,3.2vw,34px);margin:26px 0 6px;letter-spacing:-.02em}.lead{color:var(--muted);margin:0 0 20px;max-width:820px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:24px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+.card h2{margin:0 0 4px;font-size:17px}.card p.hint{margin:0 0 12px;color:var(--muted);font-size:13px}
+label{display:flex;flex-direction:column;gap:3px;font-size:13px;color:var(--muted);margin-bottom:8px}
+input{padding:7px 9px;border:1px solid var(--line);border-radius:8px;font:inherit;color:var(--ink)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.out{margin-top:10px;padding:10px 12px;border-radius:8px;background:#f1f5f9;font-size:14px;font-variant-numeric:tabular-nums}
+.out b{font-weight:700}.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}td.num{text-align:right;font-variant-numeric:tabular-nums}
+footer{color:var(--muted);font-size:13px;padding:24px 0 40px}
+code{background:#f1f5f9;padding:1px 5px;border-radius:5px;font-size:13px}
+</style>
+</head>
+<body>
+<header><div class="wrap"><a class="brand" href="./">abkit</a><nav><a href="https://github.com/D-L-Narayana/abkit">GitHub</a><a href="https://github.com/D-L-Narayana/abkit#methodology">Methodology</a><a href="https://pypi.org/" hidden>PyPI</a></nav></div></header>
+<main class="wrap">
+  <h1>A/B-test calculator &amp; experimentation toolkit</h1>
+  <p class="lead">The formulas below are the JavaScript twin of the Python package <a href="https://github.com/D-L-Narayana/abkit">abkit</a>: two-proportion z-test with confidence interval, sample-size planning, and the sample-ratio-mismatch guardrail. Underneath, the Monte-Carlo studies that check the statistics actually hold (A/A tests, power, peeking, CUPED, SRM, interleaving).</p>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Two-proportion z-test</h2>
+      <p class="hint">Control (A) vs treatment (B) conversion rates. Pooled SE for the statistic, Wald CI for the difference.</p>
+      <div class="two"><label>A conversions <input id="za" type="number" value="1000" min="0"></label><label>A visitors <input id="zna" type="number" value="10000" min="1"></label></div>
+      <div class="two"><label>B conversions <input id="zb" type="number" value="1100" min="0"></label><label>B visitors <input id="znb" type="number" value="10000" min="1"></label></div>
+      <label>Alpha <input id="zalpha" type="number" value="0.05" step="0.01" min="0.001" max="0.5"></label>
+      <div class="out" id="zout"></div>
+    </section>
+
+    <section class="card">
+      <h2>Sample size per arm</h2>
+      <p class="hint">Visitors needed in <em>each</em> arm to detect a relative lift on a conversion rate (two-sided).</p>
+      <div class="two"><label>Baseline rate <input id="sbase" type="number" value="0.10" step="0.005" min="0.0001" max="0.9999"></label><label>Min. detectable lift (relative) <input id="smde" type="number" value="0.05" step="0.01"></label></div>
+      <div class="two"><label>Alpha <input id="salpha" type="number" value="0.05" step="0.01"></label><label>Power <input id="spower" type="number" value="0.8" step="0.05" min="0.5" max="0.99"></label></div>
+      <label>Daily visitors (optional, for duration) <input id="sdaily" type="number" value="20000" min="0"></label>
+      <div class="out" id="sout"></div>
+    </section>
+
+    <section class="card">
+      <h2>Sample-ratio mismatch (SRM)</h2>
+      <p class="hint">Chi-square goodness of fit of arm sizes against the intended split. A p-value below 0.001 means the bucketing is broken — do not read the metrics.</p>
+      <div class="two"><label>Users in A <input id="ra" type="number" value="100000" min="0"></label><label>Users in B <input id="rb" type="number" value="101200" min="0"></label></div>
+      <label>Intended share of A <input id="rshare" type="number" value="0.5" step="0.05" min="0.01" max="0.99"></label>
+      <div class="out" id="rout"></div>
+    </section>
+  </div>
+
+  <section class="card" style="margin-bottom:24px">
+    <h2>Monte-Carlo validation (from <code>abkit simulate</code>, seed 2026)</h2>
+    <p class="hint">Reproduce with <code>pip install -e . &amp;&amp; abkit simulate</code>; raw output in <code>reports/simulation.json</code>.</p>
+    <table>
+      <thead><tr><th>Question</th><th>Result</th><th>Read</th></tr></thead>
+      <tbody id="simrows"></tbody>
+    </table>
+  </section>
+</main>
+<footer class="wrap">abkit is an open-source portfolio project by <a href="https://github.com/D-L-Narayana">D L Narayana</a>. Statistics: two-proportion z-test, Welch t-test, power/sample size, SRM, CUPED (Deng et al. 2013), Holm/Bonferroni, NDCG/MRR, team-draft interleaving (Radlinski et al. 2008).</footer>
+
+<script>
+// ---- numerics (no dependencies) --------------------------------------------
+function erf(x){const s=Math.sign(x);x=Math.abs(x);const t=1/(1+0.3275911*x);const y=1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x);return s*y}
+const normCdf=z=>0.5*(1+erf(z/Math.SQRT2));
+function normPpf(p){ // Acklam's rational approximation, |rel err| < 1.15e-9
+  if(p<=0||p>=1)return NaN;const a=[-3.969683028665376e+01,2.209460984245205e+02,-2.759285104469687e+02,1.383577518672690e+02,-3.066479806614716e+01,2.506628277459239e+00],b=[-5.447609879822406e+01,1.615858368580409e+02,-1.556989798598866e+02,6.680131188771972e+01,-1.328068155288572e+01],c=[-7.784894002430293e-03,-3.223964580411365e-01,-2.400758277161838e+00,-2.549732539343734e+00,4.374664141464968e+00,2.938163982698783e+00],d=[7.784695709041462e-03,3.224671290700398e-01,2.445134137142996e+00,3.754408661907416e+00];const pl=0.02425,ph=1-pl;let q,r;
+  if(p<pl){q=Math.sqrt(-2*Math.log(p));return (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1)}
+  if(p<=ph){q=p-0.5;r=q*q;return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q/(((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1)}
+  q=Math.sqrt(-2*Math.log(1-p));return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1)}
+// regularized upper incomplete gamma Q(a,x) for chi-square survival: sf = Q(df/2, x/2)
+function gammaln(x){const g=7,c=[0.99999999999980993,676.5203681218851,-1259.1392167224028,771.32342877765313,-176.61502916214059,12.507343278686905,-0.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];if(x<0.5)return Math.log(Math.PI/Math.sin(Math.PI*x))-gammaln(1-x);x-=1;let a=c[0];const t=x+g+0.5;for(let i=1;i<g+2;i++)a+=c[i]/(x+i);return 0.5*Math.log(2*Math.PI)+(x+0.5)*Math.log(t)-t+Math.log(a)}
+function gammaQ(a,x){if(x<=0)return 1;if(x<a+1){let sum=1/a,term=sum;for(let n=1;n<500;n++){term*=x/(a+n);sum+=term;if(Math.abs(term)<Math.abs(sum)*1e-14)break}return 1-sum*Math.exp(-x+a*Math.log(x)-gammaln(a))}
+  let b=x+1-a,c=1e300,d=1/b,h=d;for(let i=1;i<500;i++){const an=-i*(i-a);b+=2;d=an*d+b;if(Math.abs(d)<1e-300)d=1e-300;c=b+an/c;if(Math.abs(c)<1e-300)c=1e-300;d=1/d;const del=d*c;h*=del;if(Math.abs(del-1)<1e-14)break}return Math.exp(-x+a*Math.log(x)-gammaln(a))*h}
+const chi2sf=(x,df)=>gammaQ(df/2,x/2);
+const fmt=(x,d=4)=>Number.isFinite(x)?x.toFixed(d):"–",pct=(x,d=2)=>Number.isFinite(x)?(100*x).toFixed(d)+" %":"–";
+const $=id=>document.getElementById(id),v=id=>parseFloat($(id).value);
+
+function ztest(){const ca=v("za"),na=v("zna"),cb=v("zb"),nb=v("znb"),alpha=v("zalpha");const o=$("zout");
+  if(!(na>0&&nb>0&&ca>=0&&cb>=0&&ca<=na&&cb<=nb&&alpha>0&&alpha<1)){o.innerHTML='<span class="bad">Check the inputs: 0 ≤ conversions ≤ visitors, visitors &gt; 0.</span>';return}
+  const pa=ca/na,pb=cb/nb,pool=(ca+cb)/(na+nb),se=Math.sqrt(pool*(1-pool)*(1/na+1/nb)),z=se>0?(pb-pa)/se:0,p=2*(1-normCdf(Math.abs(z)));
+  const seu=Math.sqrt(pa*(1-pa)/na+pb*(1-pb)/nb),zc=normPpf(1-alpha/2),diff=pb-pa;
+  o.innerHTML=`A ${pct(pa)} → B ${pct(pb)} &nbsp;·&nbsp; lift <b>${(diff>=0?"+":"")+pct(diff)}</b> abs, <b>${pa>0?(diff/pa*100).toFixed(2)+" %":"–"}</b> rel<br>z = ${fmt(z,3)}, p = <b>${p<1e-4?p.toExponential(2):fmt(p)}</b> &nbsp;·&nbsp; ${(100*(1-alpha)).toFixed(0)} % CI for the difference: [${pct(diff-zc*seu)}, ${pct(diff+zc*seu)}]<br><span class="${p<alpha?"ok":"warn"}">${p<alpha?"Statistically significant at α = "+alpha:"Not significant at α = "+alpha+" — you cannot conclude B differs from A."}</span>`}
+function ssize(){const base=v("sbase"),mde=v("smde"),alpha=v("salpha"),power=v("spower"),daily=v("sdaily");const o=$("sout");const p2=base*(1+mde);
+  if(!(base>0&&base<1&&p2>0&&p2<1&&mde!==0&&alpha>0&&alpha<1&&power>0.5&&power<1)){o.innerHTML='<span class="bad">Baseline and baseline × (1 + lift) must be in (0, 1); power in (0.5, 1).</span>';return}
+  const za=normPpf(1-alpha/2),zb=normPpf(power),pbar=(base+p2)/2,num=za*Math.sqrt(2*pbar*(1-pbar))+zb*Math.sqrt(base*(1-base)+p2*(1-p2)),n=Math.ceil((num/(p2-base))**2);
+  o.innerHTML=`<b>${n.toLocaleString()}</b> visitors per arm (${(2*n).toLocaleString()} total) to detect ${pct(base)} → ${pct(p2)}${daily>0?`<br>≈ <b>${Math.ceil(2*n/daily)} days</b> at ${daily.toLocaleString()} visitors/day split 50/50`:""}<br><span class="warn">Decide the sample size before you start and do not stop early on a significant p-value: peeking 10 times inflates the false-positive rate to ~19 % (see table).</span>`}
+function srm(){const a=v("ra"),b=v("rb"),share=v("rshare");const o=$("rout");if(!(a>=0&&b>=0&&a+b>0&&share>0&&share<1)){o.innerHTML='<span class="bad">Counts must be non-negative and the share in (0, 1).</span>';return}
+  const n=a+b,ea=n*share,eb=n*(1-share),chi=(a-ea)**2/ea+(b-eb)**2/eb,p=chi2sf(chi,1);
+  o.innerHTML=`Expected ${ea.toLocaleString(undefined,{maximumFractionDigits:0})} / ${eb.toLocaleString(undefined,{maximumFractionDigits:0})}, observed ${a.toLocaleString()} / ${b.toLocaleString()}<br>χ² = ${fmt(chi,2)}, p = <b>${p<1e-6?p.toExponential(2):fmt(p,5)}</b><br><span class="${p<0.001?"bad":"ok"}">${p<0.001?"Sample-ratio mismatch: the assignment is skewed — investigate the bucketing/logging before trusting any metric.":"No SRM detected (threshold p < 0.001)."}</span>`}
+for(const id of ["za","zna","zb","znb","zalpha"])$(id).addEventListener("input",ztest);
+for(const id of ["sbase","smde","salpha","spower","sdaily"])$(id).addEventListener("input",ssize);
+for(const id of ["ra","rb","rshare"])$(id).addEventListener("input",srm);
+ztest();ssize();srm();
+
+const SIM = /*SIM_JSON*/{"seed": 2026, "aa_false_positive_rate": {"alpha": 0.05, "fpr": 0.05015}, "power_at_mde": {"n_per_arm": 14751, "empirical_power": 0.8027, "target_power": 0.8}, "peeking": {"looks": 10, "fpr_peeking": 0.1914, "fpr_bonferroni_per_look": 0.0256, "nominal_alpha": 0.05}, "cuped": {"rho_pre_period": 0.6, "mean_variance_reduction": 0.3598967517770882, "theory_variance_reduction": 0.36, "power_raw": 0.703, "power_cuped": 0.883, "mean_bias_of_lift": 0.0003157539720766654}, "srm": {"users": 200000, "skew": 0.01, "false_alarm_rate": 0.0006, "detection_rate": 1.0, "alpha": 0.001}, "interleaving_vs_ab": {"sims": 300, "median_sessions_interleaving": 1172.5, "median_sessions_ab": 1369.5, "p95_sessions_interleaving": 4000.0, "p95_sessions_ab": 4000.0, "capped_at": 4000}, "elapsed_sec": 695.8}/*END_SIM_JSON*/;
+const rows=[
+ ["A/A tests: does the z-test reject 5 % of the time when nothing changed? (20,000 sims, n = 20,000/arm)", pct(SIM.aa_false_positive_rate?.fpr,2)+" false positives", "Calibrated: matches the nominal α = 0.05."],
+ ["Power: does the planned sample size deliver 80 % power at a +10 % relative lift on a 10 % baseline?", `${SIM.power_at_mde?.n_per_arm?.toLocaleString()} per arm → ${pct(SIM.power_at_mde?.empirical_power,1)} power`, "The formula delivers what it promises."],
+ ["Peeking: check the p-value after each of 10 equal chunks and stop when p < 0.05 (A/A data)", `${pct(SIM.peeking?.fpr_peeking,1)} false positives; ${pct(SIM.peeking?.fpr_bonferroni_per_look,1)} with α/looks per look`, "Optional stopping quadruples the error rate; a per-look correction over-corrects — use pre-registered sample sizes or sequential tests."],
+ ["CUPED: how much variance does a pre-period covariate with ρ = 0.6 remove, and does the lift stay unbiased?", `${pct(SIM.cuped?.mean_variance_reduction,1)} less variance (theory ρ² = 36 %); power ${pct(SIM.cuped?.power_raw,1)} → ${pct(SIM.cuped?.power_cuped,1)}; bias ${SIM.cuped?fmt(SIM.cuped.mean_bias_of_lift,4):"–"}`, "Free power from data you already have."],
+ ["SRM: does the chi-square guardrail catch a 49/51 bucketing bug at 200k users?", `${pct(SIM.srm?.detection_rate,1)} detected, ${pct(SIM.srm?.false_alarm_rate,2)} false alarms at α = 0.001`, "Reliable at scale; run it on every experiment."],
+ ["Interleaving vs A/B: sessions until the better of two rankers is identified (p < 0.05)", `median ${SIM.interleaving_vs_ab?.median_sessions_interleaving?.toLocaleString()} (interleaving) vs ${SIM.interleaving_vs_ab?.median_sessions_ab?.toLocaleString()} (A/B) sessions`, "Interleaving decides faster because every user compares both rankers; gain depends on the click model."]];
+$("simrows").innerHTML=rows.map(r=>`<tr><td>${r[0]}</td><td class="num">${r[1]}</td><td>${r[2]}</td></tr>`).join("");
+</script>
+</body>
+</html>
