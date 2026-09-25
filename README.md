@@ -1,18 +1,63 @@
-# abkit — experimentation & ranking-evaluation toolkit
+# abkit — experimentation platform & ranking-evaluation toolkit
 
 [![CI](https://github.com/D-L-Narayana/abkit/actions/workflows/ci.yml/badge.svg)](https://github.com/D-L-Narayana/abkit/actions/workflows/ci.yml)
-[![Calculator](https://img.shields.io/badge/live%20calculator-abkit.vercel.app-134e4a)](https://abkit.vercel.app)
+[![Live app](https://img.shields.io/badge/live%20app-abkit.vercel.app-4338ca)](https://abkit.vercel.app)
 ![python](https://img.shields.io/badge/python-3.10%2B-3776ab?logo=python&logoColor=white)
+![TypeScript strict](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)
 ![tests](https://img.shields.io/badge/pytest-9%20passing-blue)
 [![MIT](https://img.shields.io/badge/license-MIT-black)](LICENSE)
 
-Small, explicit, unit-tested implementations of the statistics an online-travel experimentation platform runs every day,
-plus Monte-Carlo studies that check they behave as advertised. Python package + CLI; the core calculators are also
-available as a dependency-free web page at **[abkit.vercel.app](https://abkit.vercel.app)**.
+**[abkit.vercel.app](https://abkit.vercel.app)** — an experimentation platform in the browser: experiment dashboard, create-experiment wizard
+with power analysis, results with confidence intervals, sequential p-value plots, sample-ratio-mismatch guardrails, CUPED before/after,
+a ranking-metrics playground (NDCG / MRR / team-draft interleaving), CSV upload, shareable result links and methodology docs.
 
-> Most product changes at large travel marketplaces ship behind an A/B test, and search changes are judged with offline
-> ranking metrics and online interleaving. abkit is my working notebook for those tools — every formula is readable,
-> checked against SciPy/textbook values and stress-tested by simulation.
+Underneath is a small, dependency-free **Python package** (`abkit/`) with the same statistics — z-test, Welch t, sample size, SRM, Holm,
+CUPED, NDCG/MRR/interleaving — checked against SciPy in pytest, a CLI, and a Monte-Carlo simulation harness that quantifies why the
+guardrails matter (peeking inflates false positives to 19.1%; CUPED with ρ = 0.6 removes 36% of variance and lifts power 70% → 88%).
+The web app (`webapp/`, React 19 + Vite + TypeScript + Tailwind v4 + Recharts) mirrors those routines in TypeScript so everything runs
+client-side — uploaded data never leaves the browser.
+
+<p align="center">
+  <img src="docs/screenshots/home-desktop.jpg" width="49%" alt="Experiment dashboard with verdicts, lift and p-values" />
+  <img src="docs/screenshots/exp-desktop.jpg" width="49%" alt="Results: relative lift over time with 95% CI, sequential p-value, arms and guardrails" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/cuped-desktop.jpg" width="49%" alt="Continuous metric with CUPED before/after" />
+  <img src="docs/screenshots/srm-desktop.jpg" width="49%" alt="Sample-ratio mismatch alert invalidating an experiment" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/new-desktop.jpg" width="32%" alt="Create-experiment wizard with live power analysis" />
+  <img src="docs/screenshots/calc-desktop.jpg" width="32%" alt="Sample size, z-test and SRM calculators" />
+  <img src="docs/screenshots/ranking-desktop.jpg" width="32%" alt="Ranking metrics playground with team-draft interleaving" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/home-mobile.jpg" width="19%" alt="Mobile dashboard" />
+  <img src="docs/screenshots/exp-mobile.jpg" width="19%" alt="Mobile results" />
+  <img src="docs/screenshots/calc-mobile.jpg" width="19%" alt="Mobile calculators" />
+  <img src="docs/screenshots/ranking-mobile.jpg" width="19%" alt="Mobile ranking lab" />
+</p>
+
+## The app
+
+| Page | What you can do |
+| --- | --- |
+| **Experiments** `/` | Portfolio view: running / winners / SRM alerts / visitors; per-experiment progress to planned sample, lift, p-value and verdict chip |
+| **New experiment** `/new` | 3-step wizard: hypothesis → metric type, baseline, MDE, α, power, traffic (live sample-size & duration) → simulate with a chosen true effect and launch |
+| **Results** `/exp/:id` | Verdict, relative lift with CI, p-value, progress; lift-over-time with CI band and MDE line; sequential p-value plot; daily rates by arm; arms table; SRM χ², Holm correction; CSV export; **share link** (result encoded in the URL, read-only at `/share/…`) |
+| **CUPED** (continuous metrics) | θ, variance removed, raw vs adjusted estimate, CI width before → after, dashed CUPED interval on the time-series |
+| **Calculators** `/calculator` | Sample size with MDE curve (log scale), two-proportion z-test, sample-ratio-mismatch check |
+| **Ranking lab** `/ranking` | Graded relevance for two rankers → NDCG@k, MRR, P@k; team-draft interleaving of both lists with 400 simulated position-biased sessions and a binomial win test |
+| **Upload** `/upload` | Drag-and-drop CSV (`variant`, `converted` or `value`, optional `pre_value`, `day`) → full results page |
+| **Docs** `/docs` | Formulas and guidance: z-test, power, peeking, SRM, CUPED, ranking evaluation, multiple comparisons |
+
+Six demo experiments are simulated deterministically (seeded PRNG) with known true effects: a real winner, a loser, a null with a
+deliberate 1.2-pt bucketing skew that trips the SRM guardrail, a novelty effect that fades, and a revenue metric with a correlated
+pre-period covariate for CUPED. Light/dark theme, responsive from 360 px, keyboard-accessible, reduced-motion aware.
+
+```bash
+cd webapp && npm ci && npm run dev      # http://localhost:5173
+npm run build                           # typecheck + production bundle in webapp/dist (deployed to Vercel as a static SPA)
+```
 
 ## What's inside
 
