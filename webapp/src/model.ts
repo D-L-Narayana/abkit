@@ -1,4 +1,7 @@
-/** Experiment model, deterministic simulation, storage and share links. */
+/**
+ * Experiment model, deterministic simulation and the demo seeds.
+ * Persistence lives in lib/storage.ts, share links in lib/share.ts, CSV/JSON import-export in lib/csv.ts.
+ */
 import { addSums, binomial, emptySums, mulberry32, randn, type Sums } from "./stats";
 
 export type MetricType = "conversion" | "continuous";
@@ -23,11 +26,67 @@ export interface Experiment {
   days: DayData[];
   source: "simulated" | "csv";
   tags: string[];
+  stoppedAt?: string; // ISO date when the experiment was stopped or completed by hand
+  scenario?: string; // id of the scenario preset this experiment was generated from (see lib/scenarios.ts)
+  notes?: string;
 }
 
 export const hash = (s: string): number => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } return h >>> 0; };
 
 export interface SimOptions { trueLiftRel: number; days: number; srmSkew?: number; preCorrelation?: number; noveltyDecay?: boolean }
+
+/**
+ * χ² draw with `df` degrees of freedom. df < 30: exact sum of df squared standard normals;
+ * df ≥ 30: Wilson–Hilferty normal approximation χ² ≈ df·(1 − 2/(9df) + z·√(2/(9df)))³ (relative error O(1/df)).
+ */
+function chi2(df: number, rnd: () => number): number {
+  if (df <= 0) return 0;
+  if (df < 30) {
+    let s = 0;
+    for (let i = 0; i < df; i++) { const z = randn(rnd); s += z * z; }
+    return s;
+  }
+  const c = 2 / (9 * df);
+  const t = 1 - c + Math.sqrt(c) * randn(rnd);
+  return df * Math.max(0, t) ** 3;
+}
+
+/**
+ * Exact sufficient statistics of n i.i.d. draws from a bivariate normal (X = pre-period covariate, Y = metric)
+ * with means (meanX, meanY), standard deviations (sdX, sdY) and correlation rho — without drawing the n users.
+ *
+ * For a multivariate normal sample the mean vector and the sample covariance are independent:
+ *   x̄ ~ N(μ, Σ/n)                 drawn as μ + L z / √n with L the Cholesky factor of Σ (L = [[σx, 0], [ρσy, σy√(1−ρ²)]]),
+ *   W = (n−1)·S ~ Wishart(n−1, Σ)  drawn by the Bartlett decomposition W = L A Aᵀ Lᵀ, A lower-triangular with
+ *                                  A₁₁² ~ χ²_{n−1}, A₂₂² ~ χ²_{n−2}, A₂₁ ~ N(0, 1).
+ * Sums = { n, sx = n·x̄, sy = n·ȳ, sxx = Wxx + n·x̄², syy = Wyy + n·ȳ², sxy = Wxy + n·x̄·ȳ } (Σx² = (n−1)Sxx + n·x̄²).
+ * n ≤ 0 returns empty sums; n = 1 is a single point (W = 0); n = 2 has a rank-one scatter matrix, as it must.
+ * Consumes the PRNG in a fixed order: means (2 normals), then A₁₁, A₂₂, A₂₁.
+ */
+export function sufficientStatsNormal(n: number, meanX: number, meanY: number, sdX: number, sdY: number, rho: number, rnd: () => number): Sums {
+  n = Math.floor(n);
+  if (!(n > 0)) return emptySums();
+  const sx = Math.max(0, sdX), sy = Math.max(0, sdY);
+  const r = Math.max(-1, Math.min(1, rho));
+  const l11 = sx, l21 = r * sy, l22 = sy * Math.sqrt(Math.max(0, 1 - r * r));
+  const root = Math.sqrt(n);
+  const z1 = randn(rnd), z2 = randn(rnd);
+  const mx = meanX + (l11 * z1) / root;
+  const my = meanY + (l21 * z1 + l22 * z2) / root;
+  let wxx = 0, wyy = 0, wxy = 0;
+  const df = n - 1;
+  if (df > 0) {
+    const a11 = Math.sqrt(chi2(df, rnd));
+    const a22 = Math.sqrt(chi2(df - 1, rnd));
+    const a21 = randn(rnd);
+    // B = L·A = [[l11·a11, 0], [l21·a11 + l22·a21, l22·a22]];  W = B·Bᵀ
+    const b11 = l11 * a11, b21 = l21 * a11 + l22 * a21, b22 = l22 * a22;
+    wxx = b11 * b11;
+    wxy = b11 * b21;
+    wyy = b21 * b21 + b22 * b22;
+  }
+  return { n, sx: n * mx, sy: n * my, sxx: wxx + n * mx * mx, syy: wyy + n * my * my, sxy: wxy + n * mx * my };
+}
 
 /** Simulate daily aggregates for an experiment definition. */
 export function simulate(e: Omit<Experiment, "days">, o: SimOptions): DayData[] {
@@ -46,22 +105,11 @@ export function simulate(e: Omit<Experiment, "days">, o: SimOptions): DayData[] 
       convA = binomial(nA, e.baseline, rnd);
       convB = binomial(nB, e.baseline * (1 + lift), rnd);
     } else {
-      // continuous metric (e.g. revenue/user) with a correlated pre-period covariate, aggregated to sufficient statistics
+      // continuous metric (e.g. revenue/user) with a pre-period covariate X ~ N(baseline, std²) correlated at rho with the metric:
+      // exact sufficient statistics for every user of the arm-day, so the sample means carry σ/√n noise (not that of a small sub-sample)
       const std = e.std ?? e.baseline * 0.8;
-      const gen = (n: number, mean: number): Sums => {
-        // Aggregate moments analytically with sampling noise on the means for speed at scale.
-        const draws = Math.min(n, 400);
-        let s = emptySums();
-        for (let i = 0; i < draws; i++) {
-          const x = e.baseline + std * randn(rnd);
-          const y = mean + std * (rho * ((x - e.baseline) / std) + Math.sqrt(1 - rho * rho) * randn(rnd));
-          s = addSums(s, { n: 1, sx: x, sy: y, sxx: x * x, syy: y * y, sxy: x * y });
-        }
-        const k = n / draws;
-        return { n, sx: s.sx * k, sy: s.sy * k, sxx: s.sxx * k, syy: s.syy * k, sxy: s.sxy * k };
-      };
-      sumsA = gen(nA, e.baseline);
-      sumsB = gen(nB, e.baseline * (1 + lift));
+      sumsA = sufficientStatsNormal(nA, e.baseline, e.baseline, std, std, rho, rnd);
+      sumsB = sufficientStatsNormal(nB, e.baseline, e.baseline * (1 + lift), std, std, rho, rnd);
     }
     out.push({ day: d + 1, nA, nB, convA, convB, sumsA, sumsB });
   }
@@ -78,28 +126,21 @@ export const cumulative = (days: DayData[]): DayData[] => {
   return acc;
 };
 
-const KEY = "abkit-experiments-v1";
-export function loadExperiments(): Experiment[] {
-  try { const raw = localStorage.getItem(KEY); if (raw) return JSON.parse(raw) as Experiment[]; } catch { /* ignore */ }
-  const seeded = seedExperiments();
-  try { localStorage.setItem(KEY, JSON.stringify(seeded)); } catch { /* ignore */ }
-  return seeded;
-}
-export function saveExperiments(list: Experiment[]): void { localStorage.setItem(KEY, JSON.stringify(list)); }
-export function upsert(e: Experiment): Experiment[] { const list = loadExperiments().filter((x) => x.id !== e.id); list.unshift(e); saveExperiments(list); return list; }
-export function remove(id: string): Experiment[] { const list = loadExperiments().filter((x) => x.id !== id); saveExperiments(list); return list; }
-
 function base(id: string, name: string, extra: Partial<Experiment>): Omit<Experiment, "days"> {
   return { id, name, hypothesis: "", owner: "Search team", metric: "Booking conversion", metricType: "conversion", baseline: 0.1, mdeRel: 0.05, alpha: 0.05, power: 0.8, dailyTraffic: 40_000, split: 0.5, startDate: "2026-09-01", status: "running", plannedPerArm: 0, source: "simulated", tags: [], ...extra };
 }
+/**
+ * The six demo experiments. Each carries the id of the scenario preset it illustrates (see lib/scenarios.ts);
+ * the simulation options are spelled out here, not read from the preset catalogue, so the seeded data never changes.
+ */
 export function seedExperiments(): Experiment[] {
   const defs: [Omit<Experiment, "days">, SimOptions][] = [
-    [base("exp-ranker-v2", "Search ranker v2 (LTR) vs price sort", { hypothesis: "Ranking by the learning-to-rank model instead of price-ascending increases booking conversion on the results page.", metric: "Booking conversion", baseline: 0.082, mdeRel: 0.04, dailyTraffic: 60_000, startDate: "2026-09-08", tags: ["search", "ranking"], status: "completed" }), { trueLiftRel: 0.055, days: 21 }],
-    [base("exp-free-cancel-badge", "Free-cancellation badge on hotel cards", { hypothesis: "A prominent 'Free cancellation' badge reduces hesitation and lifts click-through to the hotel page.", metric: "Card click-through", baseline: 0.31, mdeRel: 0.03, dailyTraffic: 80_000, startDate: "2026-09-15", tags: ["ux", "results page"] }), { trueLiftRel: 0.012, days: 12 }],
-    [base("exp-urgency-copy", "Scarcity copy: 'Only 2 left' on results", { hypothesis: "Scarcity messaging increases bookings without hurting cancellations.", metric: "Booking conversion", baseline: 0.085, mdeRel: 0.05, dailyTraffic: 55_000, startDate: "2026-09-10", tags: ["ux", "copy"] }), { trueLiftRel: 0.06, days: 14, noveltyDecay: true }],
-    [base("exp-checkout-2step", "Two-step checkout vs single page", { hypothesis: "Splitting guest and payment details into two steps lowers checkout abandonment.", metric: "Checkout completion", baseline: 0.42, mdeRel: 0.03, dailyTraffic: 18_000, startDate: "2026-09-12", tags: ["checkout"] }), { trueLiftRel: -0.02, days: 14 }],
-    [base("exp-genius-upsell", "Loyalty upsell module: revenue per visitor", { hypothesis: "Showing member rates lifts revenue per visitor; CUPED with last-month spend as covariate.", metric: "Revenue per visitor (₹)", metricType: "continuous", baseline: 412, std: 640, mdeRel: 0.03, dailyTraffic: 30_000, startDate: "2026-09-05", tags: ["revenue", "cuped"], status: "completed" }), { trueLiftRel: 0.035, days: 18, preCorrelation: 0.62 }],
-    [base("exp-map-default", "Map view as default on mobile", { hypothesis: "Defaulting mobile results to the map raises engagement.", metric: "Hotel page views / session", baseline: 0.27, mdeRel: 0.05, dailyTraffic: 50_000, startDate: "2026-09-18", tags: ["mobile"] }), { trueLiftRel: 0.0, days: 8, srmSkew: 0.012 }],
+    [base("exp-ranker-v2", "Search ranker v2 (LTR) vs price sort", { hypothesis: "Ranking by the learning-to-rank model instead of price-ascending increases booking conversion on the results page.", metric: "Booking conversion", baseline: 0.082, mdeRel: 0.04, dailyTraffic: 60_000, startDate: "2026-09-08", tags: ["search", "ranking"], status: "completed", scenario: "real-effect" }), { trueLiftRel: 0.055, days: 21 }],
+    [base("exp-free-cancel-badge", "Free-cancellation badge on hotel cards", { hypothesis: "A prominent 'Free cancellation' badge reduces hesitation and lifts click-through to the hotel page.", metric: "Card click-through", baseline: 0.31, mdeRel: 0.03, dailyTraffic: 80_000, startDate: "2026-09-15", tags: ["ux", "results page"], scenario: "real-effect" }), { trueLiftRel: 0.012, days: 12 }],
+    [base("exp-urgency-copy", "Scarcity copy: 'Only 2 left' on results", { hypothesis: "Scarcity messaging increases bookings without hurting cancellations.", metric: "Booking conversion", baseline: 0.085, mdeRel: 0.05, dailyTraffic: 55_000, startDate: "2026-09-10", tags: ["ux", "copy"], scenario: "novelty-decay" }), { trueLiftRel: 0.06, days: 14, noveltyDecay: true }],
+    [base("exp-checkout-2step", "Two-step checkout vs single page", { hypothesis: "Splitting guest and payment details into two steps lowers checkout abandonment.", metric: "Checkout completion", baseline: 0.42, mdeRel: 0.03, dailyTraffic: 18_000, startDate: "2026-09-12", tags: ["checkout"], scenario: "loser" }), { trueLiftRel: -0.02, days: 14 }],
+    [base("exp-genius-upsell", "Loyalty upsell module: revenue per visitor", { hypothesis: "Showing member rates lifts revenue per visitor; CUPED with last-month spend as covariate.", metric: "Revenue per visitor (₹)", metricType: "continuous", baseline: 412, std: 640, mdeRel: 0.03, dailyTraffic: 30_000, startDate: "2026-09-05", tags: ["revenue", "cuped"], status: "completed", scenario: "revenue-cuped" }), { trueLiftRel: 0.035, days: 18, preCorrelation: 0.62 }],
+    [base("exp-map-default", "Map view as default on mobile", { hypothesis: "Defaulting mobile results to the map raises engagement.", metric: "Hotel page views / session", baseline: 0.27, mdeRel: 0.05, dailyTraffic: 50_000, startDate: "2026-09-18", tags: ["mobile"], scenario: "bucketing-bug" }), { trueLiftRel: 0.0, days: 8, srmSkew: 0.012 }],
   ];
   return defs.map(([d, o]) => {
     const planned = d.metricType === "conversion" ? sampleSizePlanned(d) : Math.ceil(2 * (((1.96 + 0.8416) * (d.std ?? 1)) / (d.baseline * d.mdeRel)) ** 2);
@@ -112,60 +153,4 @@ function sampleSizePlanned(d: Omit<Experiment, "days">): number {
   const pbar = (p1 + p2) / 2;
   const num = za * Math.sqrt(2 * pbar * (1 - pbar)) + zb * Math.sqrt(p1 * (1 - p1) + p2 * (1 - p2));
   return Math.ceil((num / (p2 - p1)) ** 2);
-}
-
-/** Share links: the whole experiment (aggregates only) encoded in the URL hash. */
-export function encodeShare(e: Experiment): string {
-  const json = JSON.stringify(e);
-  const bytes = new TextEncoder().encode(json);
-  let bin = "";
-  bytes.forEach((b) => (bin += String.fromCharCode(b)));
-  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-export function decodeShare(s: string): Experiment | null {
-  try {
-    const b = atob(s.replace(/-/g, "+").replace(/_/g, "/"));
-    const bytes = Uint8Array.from(b, (c) => c.charCodeAt(0));
-    return JSON.parse(new TextDecoder().decode(bytes)) as Experiment;
-  } catch { return null; }
-}
-
-/** CSV: columns variant (A/B or control/treatment), converted (0/1) or value, optional pre_value, optional day. */
-export function parseCsv(text: string, name: string): Experiment {
-  const lines = text.replace(/^\uFEFF/, "").trim().split(/\r?\n/);
-  if (lines.length < 2) throw new Error("The file needs a header row and at least one data row.");
-  const sep = (lines[0]!.match(/;/g)?.length ?? 0) > (lines[0]!.match(/,/g)?.length ?? 0) ? ";" : ",";
-  const split = (line: string) => line.split(sep).map((c) => c.trim().replace(/^"(.*)"$/, "$1"));
-  const header = split(lines[0]!).map((h) => h.toLowerCase());
-  const col = (n: string) => header.indexOf(n);
-  const iv = col("variant"), ic = col("converted"), ival = col("value"), ipre = col("pre_value"), iday = col("day");
-  if (iv < 0 || (ic < 0 && ival < 0)) throw new Error("CSV needs a 'variant' column and either 'converted' (0/1) or 'value' (number). Optional: pre_value, day.");
-  const continuous = ic < 0;
-  const byDay = new Map<number, DayData>();
-  for (const line of lines.slice(1)) {
-    if (!line.trim()) continue;
-    const cells = split(line);
-    const v = (cells[iv] ?? "").trim().toLowerCase();
-    const isB = ["b", "treatment", "variant", "test", "1"].includes(v);
-    const day = iday >= 0 ? Number(cells[iday]) || 1 : 1;
-    const d = byDay.get(day) ?? { day, nA: 0, nB: 0, convA: 0, convB: 0, sumsA: emptySums(), sumsB: emptySums() };
-    if (continuous) {
-      const y = Number(cells[ival]);
-      const x = ipre >= 0 ? Number(cells[ipre]) : 0;
-      const s = { n: 1, sx: x, sy: y, sxx: x * x, syy: y * y, sxy: x * y };
-      if (isB) { d.nB++; d.sumsB = addSums(d.sumsB, s); } else { d.nA++; d.sumsA = addSums(d.sumsA, s); }
-    } else {
-      const c = Number(cells[ic]) ? 1 : 0;
-      if (isB) { d.nB++; d.convB += c; } else { d.nA++; d.convA += c; }
-    }
-    byDay.set(day, d);
-  }
-  const days = [...byDay.values()].sort((a, b) => a.day - b.day);
-  if (days.reduce((s, d) => s + d.nA, 0) === 0 || days.reduce((s, d) => s + d.nB, 0) === 0) throw new Error("Both arms need rows: label treatment rows B/treatment/variant/test/1 and control rows A/control/0.");
-  const total = days.reduce((s, d) => s + d.nA + d.nB, 0);
-  const convTotal = days.reduce((s, d) => s + d.convA, 0);
-  const nA = days.reduce((s, d) => s + d.nA, 0);
-  const id = `csv-${Date.now().toString(36)}`;
-  const baseline = continuous ? days.reduce((s, d) => s + d.sumsA.sy, 0) / Math.max(1, nA) : convTotal / Math.max(1, nA);
-  return { id, name, hypothesis: "Uploaded from CSV", owner: "You", metric: continuous ? "value" : "conversion", metricType: continuous ? "continuous" : "conversion", baseline, mdeRel: 0.05, alpha: 0.05, power: 0.8, dailyTraffic: Math.round(total / Math.max(1, days.length)), split: 0.5, startDate: new Date().toISOString().slice(0, 10), status: "completed", plannedPerArm: 0, days, source: "csv", tags: ["csv"] };
 }

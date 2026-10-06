@@ -1,5 +1,5 @@
 import { BookOpen, Calculator, FlaskConical, ListOrdered, Moon, Plus, Sun } from "lucide-react";
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { cloneElement, isValidElement, useEffect, useId, useState, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useTheme } from "../theme";
 
@@ -36,14 +36,44 @@ const NAV = [
   { to: "/docs", label: "Docs", Icon: BookOpen },
 ] as const;
 
+/** Name of the page just navigated to: its heading, or the document title without the app suffix. */
+function pageName(main: HTMLElement | null): string {
+  const heading = main?.querySelector("h1")?.textContent?.trim();
+  return heading || document.title.replace(/\s+—\s+abkit\s*$/, "").trim();
+}
+
+/**
+ * Pathname of the last route the shell handled. Module-level (not a ref) so that a remount of the shell — the route error
+ * boundary is keyed by pathname and recreates the tree on navigation — is not mistaken for the first document load.
+ */
+let lastHandledPathname: string | null = null;
+
+/**
+ * App shell. On every client-side route change it scrolls to the top, moves keyboard focus to the `main` landmark (unless
+ * the new page already focused one of its own controls) and announces the new page through a polite live region, so
+ * keyboard and screen-reader users are not left on a stale element after navigating.
+ */
 export function Layout() {
   const { pathname } = useLocation();
+  const [announcement, setAnnouncement] = useState("");
   useEffect(() => {
     window.scrollTo({ top: 0 });
+    if (lastHandledPathname === null) {
+      lastHandledPathname = pathname; // initial document load: the browser's own focus handling applies
+      return;
+    }
+    if (lastHandledPathname === pathname) return; // same route re-rendered (e.g. query-string change): nothing to announce
+    lastHandledPathname = pathname;
+    const main = document.getElementById("main");
+    const active = document.activeElement;
+    const pageTookFocus = active instanceof HTMLElement && active !== document.body && main !== null && main.contains(active);
+    if (main && !pageTookFocus) main.focus({ preventScroll: true });
+    setAnnouncement(pageName(main));
   }, [pathname]);
   return (
     <div className="min-h-dvh flex flex-col">
       <a href="#main" className="skip-link">Skip to content</a>
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
       <header className="sticky top-0 z-40 bg-bg/85 backdrop-blur-md border-b border-line">
         <div className="wrap h-14 flex items-center justify-between gap-3">
           <Link to="/" aria-label="abkit home" className="shrink-0 rounded-md">
@@ -70,7 +100,7 @@ export function Layout() {
           </div>
         </div>
       </header>
-      <main id="main" className="flex-1 pb-20 md:pb-0" tabIndex={-1}>
+      <main id="main" className="flex-1 pb-20 md:pb-0 focus:outline-none" tabIndex={-1}>
         <Outlet />
       </main>
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-card/95 backdrop-blur border-t border-line grid grid-cols-4 pb-[env(safe-area-inset-bottom)]" aria-label="Mobile">
@@ -128,24 +158,50 @@ export function Stat({ label, value, hint, tone = "neutral" }: { label: string; 
   );
 }
 
+interface ControlProps { id?: string; "aria-describedby"?: string }
+
+/**
+ * Labelled form control. A single child element is linked to the label with `htmlFor`/`id` and to the hint or error with
+ * `aria-describedby`, so its accessible name is the label alone and the message is its description. The error is a live
+ * alert. Any other children are wrapped in the label as before.
+ */
 export function Field({ label, children, hint, error }: { label: string; children: ReactNode; hint?: string; error?: string | null }) {
+  const base = useId();
+  const child = isValidElement<ControlProps>(children) ? children : null;
+  const controlId = child?.props.id ?? `${base}-control`;
+  const messageId = `${base}-message`;
+  const message = error ? <span id={messageId} className="text-xs text-bad mt-1 block" role="alert">{error}</span> : hint ? <span id={messageId} className="text-xs faint mt-1 block">{hint}</span> : null;
+  if (!child) {
+    return (
+      <label className="block min-w-0">
+        <span className="label">{label}</span>
+        {children}
+        {message}
+      </label>
+    );
+  }
+  const describedBy = [child.props["aria-describedby"], message ? messageId : undefined].filter(Boolean).join(" ") || undefined;
   return (
-    <label className="block min-w-0">
-      <span className="label">{label}</span>
-      {children}
-      {error ? <span className="text-xs text-bad mt-1 block" role="alert">{error}</span> : hint ? <span className="text-xs faint mt-1 block">{hint}</span> : null}
-    </label>
+    <div className="block min-w-0">
+      <label htmlFor={controlId} className="label">{label}</label>
+      {cloneElement(child, { id: controlId, "aria-describedby": describedBy })}
+      {message}
+    </div>
   );
 }
 
-/** Numeric text field with validation: keeps the raw string while typing, reports the parsed number. */
-export function NumberField({ label, value, onChange, min, max, step, hint, mono = true, placeholder, integer = false }: { label: string; value: string; onChange: (v: string) => void; min?: number; max?: number; step?: number | "any"; hint?: string; mono?: boolean; placeholder?: string; integer?: boolean }) {
+/**
+ * Numeric text field with validation: keeps the raw string while typing and reports it unchanged. Rendered as a plain text
+ * input (`inputmode` decimal/numeric) — `min`/`max` only drive the validation message, which is linked through
+ * `aria-describedby`; `step` is accepted for compatibility and has no effect on a text input.
+ */
+export function NumberField({ label, value, onChange, min, max, hint, mono = true, placeholder, integer = false }: { label: string; value: string; onChange: (v: string) => void; min?: number; max?: number; step?: number | "any"; hint?: string; mono?: boolean; placeholder?: string; integer?: boolean }) {
   const n = Number(value);
   const invalid = value.trim() === "" || !Number.isFinite(n) || (min !== undefined && n < min) || (max !== undefined && n > max) || (integer && !Number.isInteger(n));
   const range = min !== undefined && max !== undefined ? `between ${min} and ${max}` : min !== undefined ? `at least ${min}` : max !== undefined ? `at most ${max}` : "a number";
   return (
     <Field label={label} hint={hint} error={invalid ? `Enter ${integer ? "a whole number" : "a value"} ${range}.` : null}>
-      <input className={`input ${mono ? "mono" : ""}`} inputMode={integer ? "numeric" : "decimal"} value={value} onChange={(e) => onChange(e.target.value)} aria-invalid={invalid} min={min} max={max} step={step} placeholder={placeholder} />
+      <input className={`input ${mono ? "mono" : ""}`} type="text" inputMode={integer ? "numeric" : "decimal"} autoComplete="off" spellCheck={false} value={value} onChange={(e) => onChange(e.target.value)} aria-invalid={invalid} placeholder={placeholder} />
     </Field>
   );
 }

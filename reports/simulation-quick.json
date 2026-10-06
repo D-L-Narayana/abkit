@@ -1,5 +1,6 @@
 {
   "seed": 2026,
+  "scale": 0.1,
   "aa_false_positive_rate": {
     "alpha": 0.05,
     "fpr": 0.043
@@ -38,5 +39,57 @@
     "p95_sessions_ab": 3000.0,
     "capped_at": 3000
   },
-  "elapsed_sec": 5.9
+  "msprt_peeking": {
+    "looks": 10,
+    "alpha": 0.05,
+    "sims": 1000,
+    "n_per_arm_aa": 20000,
+    "tau": 0.010000000000000002,
+    "fpr_always_valid": 0.015,
+    "power_at_mde": {
+      "baseline": 0.1,
+      "mde_rel": 0.1,
+      "n_per_arm": 14751,
+      "power_msprt": 0.477,
+      "power_fixed_horizon": 0.783,
+      "median_decision_look": 7.0,
+      "mean_fraction_of_sample_at_decision": 0.6504882517292294,
+      "target_power": 0.8
+    }
+  },
+  "relative_ci_coverage": {
+    "alpha": 0.05,
+    "nominal_coverage": 0.95,
+    "sims": 1000,
+    "scenarios": [
+      {
+        "baseline": 0.1,
+        "lift_rel": 0.1,
+        "n_per_arm": 14751,
+        "coverage_delta": 0.948,
+        "coverage_naive": 0.935,
+        "mean_width_delta": 0.14676459230106342,
+        "mean_width_naive": 0.13989011809965984
+      },
+      {
+        "baseline": 0.05,
+        "lift_rel": 0.5,
+        "n_per_arm": 4000,
+        "coverage_delta": 0.953,
+        "coverage_naive": 0.895,
+        "mean_width_delta": 0.5235659511373111,
+        "mean_width_naive": 0.42494820295661556
+      },
+      {
+        "baseline": 0.2,
+        "lift_rel": -0.1,
+        "n_per_arm": 5000,
+        "coverage_delta": 0.946,
+        "coverage_naive": 0.96,
+        "mean_width_delta": 0.1460275291130093,
+        "mean_width_naive": 0.15377216174152517
+      }
+    ]
+  },
+  "elapsed_sec": 14.2
 }

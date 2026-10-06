@@ -1,33 +1,115 @@
 /** TypeScript twin of abkit/stats.py + abkit/ranking.py (no dependencies). */
 
 // ---------------- numerics ----------------
-export function erf(x: number): number {
-  const s = Math.sign(x);
-  x = Math.abs(x);
-  const t = 1 / (1 + 0.3275911 * x);
-  const y = 1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
-  return s * y;
+/*
+ * erf / erfc — W. J. Cody's rational Chebyshev approximations ("Rational Chebyshev approximations for the error
+ * function", Math. Comp. 23, 1969; coefficient arrangement of the 1990 CALERF routine). Three regions:
+ *   |x| ≤ 0.46875          erf(x)  = x · P₄(x²)/Q₄(x²)
+ *   0.46875 < |x| ≤ 4      erfc(x) = e^{−x²} · P₈(x)/Q₈(x)
+ *   |x| > 4                erfc(x) = e^{−x²}/x · (1/√π − P₅(1/x²)/Q₅(1/x²)/x²)
+ * e^{−x²} is split as e^{−t²}·e^{−(x−t)(x+t)} with t = ⌊16x⌋/16 so the argument of the first factor is exact.
+ * Relative error ≲ 5e-15 for |x| ≤ 6 and ≲ 6e-14 up to the underflow point x ≈ 26.54 (checked against SciPy).
+ */
+const ERF_A = [3.1611237438705656, 113.864154151050156, 377.485237685302021, 3209.37758913846947, 0.185777706184603153];
+const ERF_B = [23.6012909523441209, 244.024637934444173, 1282.61652607737228, 2844.23683343917062];
+const ERFC_C = [0.564188496988670089, 8.88314979438837594, 66.1191906371416295, 298.635138197400131, 881.95222124176909, 1712.04761263407058, 2051.07837782607147, 1230.33935479799725, 2.15311535474403846e-8];
+const ERFC_D = [15.7449261107098347, 117.693950891312499, 537.181101862009858, 1621.38957456669019, 3290.79923573345963, 4362.61909014324716, 3439.36767414372164, 1230.33935480374942];
+const ERFC_P = [0.305326634961232344, 0.360344899949804439, 0.125781726111229246, 0.0160837851487422766, 6.58749161529837803e-4, 0.0163153871373020978];
+const ERFC_Q = [2.56852019228982242, 1.87295284992346725, 0.527905102951428412, 0.0605183413124413191, 2.33520497626869185e-3];
+const ONE_OVER_SQRT_PI = 0.5641895835477562869;
+const ERF_THRESH = 0.46875;
+const ERFC_XBIG = 26.543; // erfc underflows below the smallest normal double
+
+/** erf(x) for 0 ≤ x ≤ 0.46875. */
+function erfSmall(x: number): number {
+  const ysq = x > 1.11e-16 ? x * x : 0;
+  let xnum = ERF_A[4]! * ysq;
+  let xden = ysq;
+  for (let i = 0; i < 3; i++) {
+    xnum = (xnum + ERF_A[i]!) * ysq;
+    xden = (xden + ERF_B[i]!) * ysq;
+  }
+  return (x * (xnum + ERF_A[3]!)) / (xden + ERF_B[3]!);
 }
-export const normCdf = (z: number): number => 0.5 * (1 + erf(z / Math.SQRT2));
-export function normPpf(p: number): number {
-  if (p <= 0 || p >= 1) return NaN;
-  const a = [-3.969683028665376e1, 2.209460984245205e2, -2.759285104469687e2, 1.38357751867269e2, -3.066479806614716e1, 2.506628277459239];
-  const b = [-5.447609879822406e1, 1.615858368580409e2, -1.556989798598866e2, 6.680131188771972e1, -1.328068155288572e1];
-  const c = [-7.784894002430293e-3, -3.223964580411365e-1, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783];
-  const d = [7.784695709041462e-3, 3.224671290700398e-1, 2.445134137142996, 3.754408661907416];
-  const pl = 0.02425;
-  let q: number, r: number;
-  if (p < pl) {
-    q = Math.sqrt(-2 * Math.log(p));
+/** e^{−y²} with the argument split so rounding in y² does not leak into the result. */
+function expNegSquare(y: number): number {
+  const t = Math.trunc(y * 16) / 16;
+  return Math.exp(-t * t) * Math.exp(-(y - t) * (y + t));
+}
+/** erfc(y) for y > 0.46875. */
+function erfcLarge(y: number): number {
+  if (y <= 4) {
+    let xnum = ERFC_C[8]! * y;
+    let xden = y;
+    for (let i = 0; i < 7; i++) {
+      xnum = (xnum + ERFC_C[i]!) * y;
+      xden = (xden + ERFC_D[i]!) * y;
+    }
+    return (expNegSquare(y) * (xnum + ERFC_C[7]!)) / (xden + ERFC_D[7]!);
+  }
+  if (y >= ERFC_XBIG) return 0;
+  const ysq = 1 / (y * y);
+  let xnum = ERFC_P[5]! * ysq;
+  let xden = ysq;
+  for (let i = 0; i < 4; i++) {
+    xnum = (xnum + ERFC_P[i]!) * ysq;
+    xden = (xden + ERFC_Q[i]!) * ysq;
+  }
+  const r = (ysq * (xnum + ERFC_P[4]!)) / (xden + ERFC_Q[4]!);
+  return (expNegSquare(y) * (ONE_OVER_SQRT_PI - r)) / y;
+}
+/** Complementary error function, relative error ≲ 5e-15 for |x| ≤ 6 (Cody). erfc(−x) = 2 − erfc(x). */
+export function erfc(x: number): number {
+  if (Number.isNaN(x)) return NaN;
+  const y = Math.abs(x);
+  const r = y <= ERF_THRESH ? 1 - erfSmall(y) : erfcLarge(y);
+  return x < 0 ? 2 - r : r;
+}
+/** Error function on the same approximation (erf(x) = 1 − erfc(x) away from zero, direct series near zero). */
+export function erf(x: number): number {
+  if (Number.isNaN(x)) return NaN;
+  const y = Math.abs(x);
+  const r = y <= ERF_THRESH ? erfSmall(y) : 1 - erfcLarge(y);
+  return x < 0 ? -r : r;
+}
+/** Standard normal survival function P(Z > z) = ½·erfc(z/√2); keeps full relative precision in the far tail. */
+export function normSf(z: number): number {
+  return 0.5 * erfc(z / Math.SQRT2);
+}
+/** Standard normal CDF, computed through the survival function on the side that does not cancel. */
+export const normCdf = (z: number): number => (z < 0 ? normSf(-z) : 1 - normSf(z));
+
+const ACKLAM_A = [-3.969683028665376e1, 2.209460984245205e2, -2.759285104469687e2, 1.38357751867269e2, -3.066479806614716e1, 2.506628277459239];
+const ACKLAM_B = [-5.447609879822406e1, 1.615858368580409e2, -1.556989798598866e2, 6.680131188771972e1, -1.328068155288572e1];
+const ACKLAM_C = [-7.784894002430293e-3, -3.223964580411365e-1, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783];
+const ACKLAM_D = [7.784695709041462e-3, 3.224671290700398e-1, 2.445134137142996, 3.754408661907416];
+/** P. J. Acklam's rational approximation of the inverse normal CDF (relative error ≈ 1.15e-9) for 0 < p ≤ 0.5. */
+function acklam(p: number): number {
+  const a = ACKLAM_A, b = ACKLAM_B, c = ACKLAM_C, d = ACKLAM_D;
+  if (p < 0.02425) {
+    const q = Math.sqrt(-2 * Math.log(p));
     return (((((c[0]! * q + c[1]!) * q + c[2]!) * q + c[3]!) * q + c[4]!) * q + c[5]!) / ((((d[0]! * q + d[1]!) * q + d[2]!) * q + d[3]!) * q + 1);
   }
-  if (p <= 1 - pl) {
-    q = p - 0.5;
-    r = q * q;
-    return ((((((a[0]! * r + a[1]!) * r + a[2]!) * r + a[3]!) * r + a[4]!) * r + a[5]!) * q) / (((((b[0]! * r + b[1]!) * r + b[2]!) * r + b[3]!) * r + b[4]!) * r + 1);
-  }
-  q = Math.sqrt(-2 * Math.log(1 - p));
-  return -(((((c[0]! * q + c[1]!) * q + c[2]!) * q + c[3]!) * q + c[4]!) * q + c[5]!) / ((((d[0]! * q + d[1]!) * q + d[2]!) * q + d[3]!) * q + 1);
+  const q = p - 0.5;
+  const r = q * q;
+  return ((((((a[0]! * r + a[1]!) * r + a[2]!) * r + a[3]!) * r + a[4]!) * r + a[5]!) * q) / (((((b[0]! * r + b[1]!) * r + b[2]!) * r + b[3]!) * r + b[4]!) * r + 1);
+}
+/**
+ * Inverse of the standard normal CDF. Acklam's approximation followed by one Halley step on f(x) = Φ(x) − p
+ * (f′ = φ, f″/f′ = −x), with the residual evaluated through erfc so the step is accurate in the tails.
+ * Relative error < 1e-13 against SciPy's ndtri; exactly 0 at p = 0.5; NaN outside (0, 1).
+ */
+export function normPpf(p: number): number {
+  if (!(p > 0 && p < 1)) return NaN;
+  if (p === 0.5) return 0;
+  if (p > 0.5) return -normPpf(1 - p);
+  const x = acklam(p);
+  // Φ(x) − p without cancellation: near the centre via erf (p − ½ is exact there), otherwise via the lower tail.
+  const e = x > -0.66 ? 0.5 * erf(x / Math.SQRT2) - (p - 0.5) : normSf(-x) - p;
+  if (e === 0) return x;
+  const u = e * Math.sqrt(2 * Math.PI) * Math.exp((x * x) / 2); // f / f′
+  if (!Number.isFinite(u)) return x;
+  return x - u / (1 + (x * u) / 2);
 }
 function gammaln(x: number): number {
   const g = 7;
@@ -69,7 +151,8 @@ function gammaQ(a: number, x: number): number {
   }
   return Math.exp(-x + a * Math.log(x) - gammaln(a)) * h;
 }
-export const chi2Sf = (x: number, df: number): number => gammaQ(df / 2, x / 2);
+/** Chi-square survival function; df = 1 is erfc(√(x/2)) exactly, other df use the regularised incomplete gamma. */
+export const chi2Sf = (x: number, df: number): number => (df === 1 ? erfc(Math.sqrt(Math.max(0, x) / 2)) : gammaQ(df / 2, x / 2));
 /** Regularised incomplete beta I_x(a,b) via continued fraction (Numerical Recipes). */
 function betacf(a: number, b: number, x: number): number {
   const qab = a + b, qap = a + 1, qam = a - 1;
@@ -77,7 +160,8 @@ function betacf(a: number, b: number, x: number): number {
   if (Math.abs(d) < 1e-300) d = 1e-300;
   d = 1 / d;
   let h = d;
-  for (let m = 1; m <= 300; m++) {
+  // converges in O(√max(a, b)) steps; the cap only matters for df in the millions (Welch with huge arms)
+  for (let m = 1; m <= 20_000; m++) {
     const m2 = 2 * m;
     let aa = (m * (b - m) * x) / ((qam + m2) * (a + m2));
     d = 1 + aa * d; if (Math.abs(d) < 1e-300) d = 1e-300;
@@ -118,7 +202,7 @@ export function twoProportionZ(convA: number, nA: number, convB: number, nB: num
   const pooled = (convA + convB) / (nA + nB);
   const se = Math.sqrt(pooled * (1 - pooled) * (1 / nA + 1 / nB));
   const z = se > 0 ? (pb - pa) / se : 0;
-  const p = 2 * (1 - normCdf(Math.abs(z)));
+  const p = 2 * normSf(Math.abs(z));
   const seU = Math.sqrt((pa * (1 - pa)) / nA + (pb * (1 - pb)) / nB);
   const zc = normPpf(1 - alpha / 2);
   const diff = pb - pa;
@@ -136,6 +220,36 @@ export function welch(a: MeanStats, b: MeanStats, alpha = 0.05): TResult {
   const tc = tPpf(1 - alpha / 2, df);
   return { diff, liftRel: a.mean !== 0 ? diff / a.mean : NaN, t, df, p, ciLow: diff - tc * se, ciHigh: diff + tc * se, significant: p < alpha };
 }
+
+/** Relative lift (B/A − 1) with a delta-method confidence interval. All fields NaN when the control mean is 0. */
+export interface RelCI { lift: number; lo: number; hi: number; se: number }
+const NAN_REL: RelCI = { lift: NaN, lo: NaN, hi: NaN, se: NaN };
+/**
+ * Delta-method CI for the ratio R = meanB / meanA of two independent estimates:
+ *   Var(R) = seB²/meanA² + meanB²·seA²/meanA⁴,   lift = R − 1,   CI = lift ± z₁₋α/₂·√Var(R).
+ * Unlike dividing the absolute CI by the control mean, this accounts for the uncertainty of the control estimate.
+ */
+export function relativeLiftCI(meanA: number, seA: number, meanB: number, seB: number, alpha = 0.05): RelCI {
+  if (meanA === 0 || ![meanA, seA, meanB, seB].every(Number.isFinite) || !(alpha > 0 && alpha < 1)) return NAN_REL;
+  const ratio = meanB / meanA;
+  const variance = (seB * seB) / (meanA * meanA) + (meanB * meanB * seA * seA) / meanA ** 4;
+  const se = Math.sqrt(variance);
+  const lift = ratio - 1;
+  const z = normPpf(1 - alpha / 2);
+  return { lift, lo: lift - z * se, hi: lift + z * se, se };
+}
+/** Delta-method relative lift for two conversion rates (se = √(p(1−p)/n) per arm). */
+export function relativeLiftProportions(convA: number, nA: number, convB: number, nB: number, alpha = 0.05): RelCI {
+  if (!(nA > 0 && nB > 0 && convA >= 0 && convB >= 0 && convA <= nA && convB <= nB)) return NAN_REL;
+  const pa = convA / nA, pb = convB / nB;
+  return relativeLiftCI(pa, Math.sqrt((pa * (1 - pa)) / nA), pb, Math.sqrt((pb * (1 - pb)) / nB), alpha);
+}
+/** Delta-method relative lift for two means from sufficient statistics (se = √(var/n) per arm). */
+export function relativeLiftMeans(a: MeanStats, b: MeanStats, alpha = 0.05): RelCI {
+  if (!(a.n > 0 && b.n > 0 && a.var >= 0 && b.var >= 0)) return NAN_REL;
+  return relativeLiftCI(a.mean, Math.sqrt(a.var / a.n), b.mean, Math.sqrt(b.var / b.n), alpha);
+}
+
 export function sampleSizeProportion(baseline: number, mdeRel: number, alpha = 0.05, power = 0.8): number {
   const p1 = baseline, p2 = baseline * (1 + mdeRel);
   const za = normPpf(1 - alpha / 2), zb = normPpf(power);
@@ -145,6 +259,41 @@ export function sampleSizeProportion(baseline: number, mdeRel: number, alpha = 0
 }
 export function sampleSizeMean(std: number, mdeAbs: number, alpha = 0.05, power = 0.8): number {
   return Math.ceil(2 * (((normPpf(1 - alpha / 2) + normPpf(power)) * std) / mdeAbs) ** 2);
+}
+/**
+ * Power of the two-sided two-proportion z-test at `nPerArm` users per arm (inverse of sampleSizeProportion):
+ *   Φ( (|p₂−p₁|·√n − z₁₋α/₂·√(2p̄q̄)) / √(p₁q₁ + p₂q₂) ),  p₂ = p₁(1 + mdeRel).  NaN for impossible inputs.
+ */
+export function powerProportion(baseline: number, mdeRel: number, nPerArm: number, alpha = 0.05): number {
+  const p1 = baseline, p2 = baseline * (1 + mdeRel);
+  if (!(p1 > 0 && p1 < 1 && p2 > 0 && p2 < 1 && nPerArm > 0 && alpha > 0 && alpha < 1) || !Number.isFinite(nPerArm)) return NaN;
+  const za = normPpf(1 - alpha / 2);
+  const pbar = (p1 + p2) / 2;
+  return normCdf((Math.abs(p2 - p1) * Math.sqrt(nPerArm) - za * Math.sqrt(2 * pbar * (1 - pbar))) / Math.sqrt(p1 * (1 - p1) + p2 * (1 - p2)));
+}
+/** Power of the two-sided two-sample z/t-test for a mean difference `mdeAbs` with known std: Φ(|δ|·√(n/2)/σ − z₁₋α/₂). */
+export function powerMean(std: number, mdeAbs: number, nPerArm: number, alpha = 0.05): number {
+  if (!(std > 0 && nPerArm > 0 && alpha > 0 && alpha < 1) || !Number.isFinite(nPerArm) || !Number.isFinite(mdeAbs)) return NaN;
+  return normCdf((Math.abs(mdeAbs) * Math.sqrt(nPerArm / 2)) / std - normPpf(1 - alpha / 2));
+}
+/**
+ * Smallest relative lift detectable with the given power at `nPerArm` users per arm (bisection on powerProportion,
+ * which rises from α/2 at MDE → 0 towards 1 as the treatment rate approaches 1). NaN for impossible inputs.
+ */
+export function mdeAtN(baseline: number, nPerArm: number, alpha = 0.05, power = 0.8): number {
+  if (!(baseline > 0 && baseline < 1 && nPerArm > 0 && alpha > 0 && alpha < 1 && power > alpha / 2 && power < 1) || !Number.isFinite(nPerArm)) return NaN;
+  let lo = 0, hi = (1 - baseline) / baseline;
+  for (let i = 0; i < 100; i++) {
+    const mid = (lo + hi) / 2;
+    const pw = powerProportion(baseline, mid, nPerArm, alpha);
+    if (Number.isNaN(pw) || pw >= power) hi = mid; else lo = mid;
+  }
+  return (lo + hi) / 2;
+}
+/** Smallest absolute mean difference detectable at `nPerArm` per arm (closed-form inverse of sampleSizeMean): (z₁₋α/₂ + z_power)·σ·√(2/n). */
+export function mdeAtNMean(std: number, nPerArm: number, alpha = 0.05, power = 0.8): number {
+  if (!(std > 0 && nPerArm > 0 && alpha > 0 && alpha < 1 && power > 0 && power < 1) || !Number.isFinite(nPerArm)) return NaN;
+  return (normPpf(1 - alpha / 2) + normPpf(power)) * std * Math.sqrt(2 / nPerArm);
 }
 export function srm(observed: number[], ratios?: number[]): { chi2: number; p: number; mismatch: boolean; expected: number[] } {
   const total = observed.reduce((a, b) => a + b, 0);

@@ -1,0 +1,6 @@
+# Source distributions must carry the test suite's data files: setuptools adds tests/test_*.py by itself but never the
+# fixtures those tests read (tests/fixtures/*.json, tests/fixtures/csv/*). Verified by tests/test_packaging.py and
+# scripts/check_archive.py, which also runs the suite from the extracted archive.
+graft tests/fixtures
+global-exclude __pycache__
+global-exclude *.py[cod]

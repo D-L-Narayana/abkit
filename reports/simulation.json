@@ -1,5 +1,6 @@
 {
   "seed": 2026,
+  "scale": 1.0,
   "aa_false_positive_rate": {
     "alpha": 0.05,
     "fpr": 0.05015
@@ -11,32 +12,84 @@
   },
   "peeking": {
     "looks": 10,
-    "fpr_peeking": 0.1914,
-    "fpr_bonferroni_per_look": 0.0256,
+    "fpr_peeking": 0.1955,
+    "fpr_bonferroni_per_look": 0.0275,
     "nominal_alpha": 0.05
   },
   "cuped": {
     "rho_pre_period": 0.6,
-    "mean_variance_reduction": 0.3598967517770882,
+    "mean_variance_reduction": 0.3595981117071858,
     "theory_variance_reduction": 0.36,
-    "power_raw": 0.703,
-    "power_cuped": 0.883,
-    "mean_bias_of_lift": 0.0003157539720766654
+    "power_raw": 0.6995,
+    "power_cuped": 0.881,
+    "mean_bias_of_lift": -0.0003152793097370794
   },
   "srm": {
     "users": 200000,
     "skew": 0.01,
-    "false_alarm_rate": 0.0006,
+    "false_alarm_rate": 0.001,
     "detection_rate": 1.0,
     "alpha": 0.001
   },
   "interleaving_vs_ab": {
-    "sims": 300,
-    "median_sessions_interleaving": 1172.5,
-    "median_sessions_ab": 1369.5,
-    "p95_sessions_interleaving": 4000.0,
-    "p95_sessions_ab": 4000.0,
-    "capped_at": 4000
+    "sims": 200,
+    "median_sessions_interleaving": 1025.0,
+    "median_sessions_ab": 1587.5,
+    "p95_sessions_interleaving": 3000.0,
+    "p95_sessions_ab": 3000.0,
+    "capped_at": 3000
   },
-  "elapsed_sec": 695.8
+  "msprt_peeking": {
+    "looks": 10,
+    "alpha": 0.05,
+    "sims": 10000,
+    "n_per_arm_aa": 20000,
+    "tau": 0.010000000000000002,
+    "fpr_always_valid": 0.0104,
+    "power_at_mde": {
+      "baseline": 0.1,
+      "mde_rel": 0.1,
+      "n_per_arm": 14751,
+      "power_msprt": 0.4699,
+      "power_fixed_horizon": 0.8051,
+      "median_decision_look": 7.0,
+      "mean_fraction_of_sample_at_decision": 0.6667868139093632,
+      "target_power": 0.8
+    }
+  },
+  "relative_ci_coverage": {
+    "alpha": 0.05,
+    "nominal_coverage": 0.95,
+    "sims": 10000,
+    "scenarios": [
+      {
+        "baseline": 0.1,
+        "lift_rel": 0.1,
+        "n_per_arm": 14751,
+        "coverage_delta": 0.9509,
+        "coverage_naive": 0.9386,
+        "mean_width_delta": 0.14690929942222664,
+        "mean_width_naive": 0.1399730608844729
+      },
+      {
+        "baseline": 0.05,
+        "lift_rel": 0.5,
+        "n_per_arm": 4000,
+        "coverage_delta": 0.9489,
+        "coverage_naive": 0.8855,
+        "mean_width_delta": 0.5254231654869354,
+        "mean_width_naive": 0.42578883654649463
+      },
+      {
+        "baseline": 0.2,
+        "lift_rel": -0.1,
+        "n_per_arm": 5000,
+        "coverage_delta": 0.9486,
+        "coverage_naive": 0.9594,
+        "mean_width_delta": 0.14609805149386063,
+        "mean_width_naive": 0.15378493207442726
+      }
+    ]
+  },
+  "elapsed_sec": 138.8
 }
